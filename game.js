@@ -3,6 +3,9 @@ const GRID_SIZE = Math.floor(550/30);
 const GRID_COUNT = 30;
 const BASE_SPEED = 100;
 const WALL_COUNT = Math.floor(GRID_COUNT * GRID_COUNT * 0.05); // 5% of grid will be walls
+const PARTICLE_COUNT = 15; // Number of particles per food collection
+const STARS_COUNT = 50; // Number of background stars
+const PARALLAX_STRENGTH = 0.3; // How much the background moves
 
 // Game variables
 let snake = [
@@ -16,15 +19,133 @@ let score = 0;
 let gameLoop = null;
 let gameSpeed = BASE_SPEED;
 let highScore = localStorage.getItem('highScore') || 0;
+let particles = [];
 let currentDifficulty = 'normal';
+let backgroundStars = [];
+let floatingTexts = [];
+let activeEffects = [];
+let combo = 0;
+let lastFoodTime = 0;
+let comboTimeout = null;
 
 // Food types with their properties
 const FOOD_TYPES = {
     normal: { color: '#FF5722', points: 10, effect: null },
-    speed: { color: '#2196F3', points: 20, effect: 'speedUp' },
+    speed: { color: '#2196F3', points: 20, effect: 'speedUp', duration: 5000 },
     slow: { color: '#9C27B0', points: 15, effect: 'slowDown' },
     bonus: { color: '#FFD700', points: 30, effect: null }
 };
+
+// Particle class for effects
+class Particle {
+    constructor(x, y, color) {
+        this.x = x;
+        this.y = y;
+        this.color = color;
+        this.size = Math.random() * 4 + 2;
+        this.speedX = (Math.random() - 0.5) * 8;
+        this.speedY = (Math.random() - 0.5) * 8;
+        this.gravity = 0.2;
+        this.life = 1.0;
+        this.decay = Math.random() * 0.02 + 0.02;
+    }
+
+    update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        this.speedY += this.gravity;
+        this.life -= this.decay;
+        this.size *= 0.99;
+        return this.life > 0;
+    }
+}
+
+// Star class for background
+class Star {
+    constructor() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2 + 1;
+        this.depth = Math.random() * 0.5 + 0.5; // Used for parallax effect
+        this.brightness = Math.random() * 0.5 + 0.5;
+    }
+}
+
+// Floating text for score/effects
+class FloatingText {
+    constructor(x, y, text, color) {
+        this.x = x;
+        this.y = y;
+        this.text = text;
+        this.color = color;
+        this.life = 1.0;
+        this.velocity = -2;
+    }
+}
+
+// Function to create particle burst
+function createParticleBurst(x, y, color) {
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+        particles.push(new Particle(
+            x * GRID_SIZE + GRID_SIZE / 2,
+            y * GRID_SIZE + GRID_SIZE / 2,
+            color
+        ));
+    }
+}
+
+// Create floating score text
+function createFloatingText(x, y, text, color) {
+    floatingTexts.push(new FloatingText(
+        x * GRID_SIZE + GRID_SIZE / 2,
+        y * GRID_SIZE,
+        text,
+        color
+    ));
+}
+
+// Add status effect
+function addStatusEffect(type, duration) {
+    activeEffects.push({
+        type,
+        duration,
+        startTime: Date.now(),
+        color: FOOD_TYPES[type].color
+    });
+}
+
+// Handle combo system
+function updateCombo() {
+    const currentTime = Date.now();
+    const timeSinceLastFood = currentTime - lastFoodTime;
+    
+    if (timeSinceLastFood < 2000) { // 2 seconds window for combo
+        combo++;
+        // Clear existing timeout
+        if (comboTimeout) clearTimeout(comboTimeout);
+    } else {
+        combo = 1;
+    }
+    
+    lastFoodTime = currentTime;
+    
+    // Set new timeout to reset combo
+    comboTimeout = setTimeout(() => {
+        if (combo > 1) {
+            createFloatingText(snake[0].x, snake[0].y, "Combo End!", "#ff4444");
+        }
+        combo = 0;
+    }, 2000);
+    
+    return combo;
+}
+
+// Initialize background stars
+function initializeStars() {
+    backgroundStars = Array.from({ length: STARS_COUNT }, () => new Star());
+}
+
+initializeStars();
 
 // Difficulty settings
 const DIFFICULTY_SETTINGS = {
@@ -198,7 +319,15 @@ function update() {
         // Check if snake ate food
         if (head.x === food.x && head.y === food.y) {
             const foodType = FOOD_TYPES[food.type];
-            const points = Math.floor(foodType.points * DIFFICULTY_SETTINGS[currentDifficulty].foodPoints);
+            const currentCombo = updateCombo();
+            const comboMultiplier = currentCombo > 1 ? currentCombo * 0.5 : 1;
+            const points = Math.floor(
+                foodType.points * 
+                DIFFICULTY_SETTINGS[currentDifficulty].foodPoints * 
+                comboMultiplier
+            );
+            createParticleBurst(food.x, food.y, foodType.color);
+            createFloatingText(food.x, food.y, `+${points}${currentCombo > 1 ? ` x${currentCombo}` : ''}`, foodType.color);
             score += points;
             
             // Apply food effects
@@ -206,11 +335,13 @@ function update() {
                 gameSpeed = Math.max(BASE_SPEED * 0.7, gameSpeed * 0.8);
                 clearInterval(gameLoop);
                 gameLoop = setInterval(update, gameSpeed / 60);
+                addStatusEffect('speed', foodType.duration);
             } else if (foodType.effect === 'slowDown') {
                 gameSpeed = Math.min(BASE_SPEED * 1.3, gameSpeed * 1.2);
                 clearInterval(gameLoop);
                 gameLoop = setInterval(update, gameSpeed / 60);
             }
+
             
             // Update scores
             if (score > highScore) {
@@ -235,6 +366,121 @@ function draw() {
     ctx.fillStyle = '#fff';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+    // Calculate parallax offset based on snake head position
+    const snakeHead = snake[0];
+    const centerX = canvas.width / 2;
+    const centerY = canvas.height / 2;
+    const offsetX = (snakeHead.x * GRID_SIZE - centerX) * PARALLAX_STRENGTH;
+    const offsetY = (snakeHead.y * GRID_SIZE - centerY) * PARALLAX_STRENGTH;
+
+    // Draw background stars with parallax effect
+    backgroundStars.forEach(star => {
+        const parallaxX = offsetX * star.depth;
+        const parallaxY = offsetY * star.depth;
+        
+        // Wrap stars around the canvas
+        let drawX = star.x - parallaxX;
+        let drawY = star.y - parallaxY;
+        
+        drawX = ((drawX % canvas.width) + canvas.width) % canvas.width;
+        drawY = ((drawY % canvas.height) + canvas.height) % canvas.height;
+        
+        const gradient = ctx.createRadialGradient(
+            drawX, drawY, 0,
+            drawX, drawY, star.size * 2
+        );
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * star.brightness})`);
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(drawX - star.size, drawY - star.size, star.size * 2, star.size * 2);
+    });
+
+    // Add subtle color overlay to create depth
+    ctx.fillStyle = `rgba(0, 0, 0, 0.1)`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw and update particles
+    particles = particles.filter(particle => {
+        ctx.save();
+        ctx.globalAlpha = particle.life;
+        ctx.fillStyle = particle.color;
+        ctx.shadowColor = particle.color;
+        ctx.shadowBlur = 10;
+        
+        ctx.beginPath();
+        ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+        
+        return particle.update();
+    });
+
+    ctx.globalAlpha = 1;
+
+    // Draw and update floating texts
+    floatingTexts = floatingTexts.filter(text => {
+        text.y += text.velocity;
+        text.life -= 0.02;
+        
+        if (text.life > 0) {
+            ctx.save();
+            ctx.globalAlpha = text.life;
+            ctx.fillStyle = text.color;
+            ctx.shadowColor = text.color;
+            ctx.shadowBlur = 5;
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(text.text, text.x, text.y);
+            ctx.restore();
+            return true;
+        }
+        return false;
+    });
+
+    // Draw status effects
+    const currentTime = Date.now();
+    activeEffects = activeEffects.filter(effect => {
+        const timeLeft = effect.duration - (currentTime - effect.startTime);
+        if (timeLeft > 0) {
+            const x = 20;
+            const y = canvas.height - 60;
+            const width = 100;
+            const height = 4;
+            const progress = timeLeft / effect.duration;
+
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.fillRect(x, y, width, height);
+            ctx.fillStyle = effect.color;
+            ctx.fillRect(x, y, width * progress, height);
+            return true;
+        }
+        return false;
+    });
+
+    // Draw combo indicator if active
+    if (combo > 1) {
+        const comboText = `${combo}x Combo!`;
+        ctx.save();
+        ctx.font = 'bold 24px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Create gradient for combo text
+        const gradient = ctx.createLinearGradient(
+            canvas.width/2 - 50, canvas.height - 40,
+            canvas.width/2 + 50, canvas.height - 40
+        );
+        gradient.addColorStop(0, '#ff6b6b');
+        gradient.addColorStop(1, '#ffd93d');
+        ctx.fillStyle = gradient;
+        ctx.shadowColor = '#ff6b6b';
+        ctx.shadowBlur = 10;
+        ctx.fillText(comboText, canvas.width/2, canvas.height - 40);
+        ctx.restore();
+    }
+
     // Draw walls
     ctx.fillStyle = '#34495e';
     walls.forEach(wall => {
@@ -252,9 +498,13 @@ function draw() {
     // Draw snake trail effect with improved interpolation
     snake.forEach((segment, index) => {
         const alpha = 1 - (index / snake.length) * 0.6;
-        const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
-        gradient.addColorStop(0, `rgba(46, 204, 113, ${alpha})`);
-        gradient.addColorStop(1, `rgba(39, 174, 96, ${alpha})`);
+        const time = Date.now() / 1000;
+        const hue = (200 + Math.sin(time + index * 0.1) * 20) % 360;
+        const gradient = ctx.createLinearGradient(
+            segment.x * GRID_SIZE, segment.y * GRID_SIZE,
+            (segment.x + 1) * GRID_SIZE, (segment.y + 1) * GRID_SIZE);
+        gradient.addColorStop(0, `hsla(${hue}, 70%, 50%, ${alpha})`);
+        gradient.addColorStop(1, `hsla(${hue + 30}, 70%, 40%, ${alpha})`);
         ctx.fillStyle = gradient;
 
         let x = segment.x;
@@ -282,6 +532,23 @@ function draw() {
 
         ctx.beginPath();
         ctx.roundRect(x, y, segmentSize, segmentSize, 6);
+        
+        // Add speed effect trail when speed powerup is active
+        if (activeEffects.some(effect => effect.type === 'speed')) {
+            const trailGradient = ctx.createLinearGradient(
+                x, y + segmentSize,
+                x, y
+            );
+            trailGradient.addColorStop(0, 'rgba(33, 150, 243, 0)');
+            trailGradient.addColorStop(1, 'rgba(33, 150, 243, 0.3)');
+            
+            ctx.shadowColor = '#2196F3';
+            ctx.shadowBlur = 20;
+        } else {
+            ctx.shadowColor = gradient.addColorStop(0);
+        }
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 2;
         ctx.fill();
     });
 
@@ -322,7 +589,15 @@ function draw() {
         }
     }
 
-    ctx.fillStyle = '#219653';
+    // Enhanced snake head with gradient and glow
+    const headGradient = ctx.createRadialGradient(
+        headX * GRID_SIZE + GRID_SIZE/2, headY * GRID_SIZE + GRID_SIZE/2, 0,
+        headX * GRID_SIZE + GRID_SIZE/2, headY * GRID_SIZE + GRID_SIZE/2, GRID_SIZE/2
+    );
+    headGradient.addColorStop(0, '#2ecc71');
+    headGradient.addColorStop(1, '#27ae60');
+    ctx.fillStyle = headGradient;
+    ctx.shadowBlur = 15;
     ctx.beginPath();
     ctx.arc(
         headX * GRID_SIZE + GRID_SIZE/2,
@@ -332,6 +607,10 @@ function draw() {
         Math.PI * 2
     );
     ctx.fill();
+
+    // Reset shadow effect
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
 }
 
 // Initialize game
@@ -423,6 +702,13 @@ function resetGame() {
     snake = [{ x: 10, y: 10 }];
     direction = 'right';
     score = 0;
+    particles = [];
+    floatingTexts = [];
+    activeEffects = [];
+    combo = 0;
+    lastFoodTime = 0;
+    if (comboTimeout) clearTimeout(comboTimeout);
+    initializeStars(); // Reset background stars
     gameSpeed = BASE_SPEED * DIFFICULTY_SETTINGS[currentDifficulty].speedMultiplier;
     scoreElement.textContent = `Score: 0 | High Score: ${highScore}`;
     document.getElementById('startButton').disabled = false;
