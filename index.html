@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snake Game</title>
+    <style>
+        :root {
+            --bg-gradient-dark: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            --bg-gradient-light: linear-gradient(135deg, #e0e0e0 0%, #f5f5f5 100%);
+            --text-color-dark: #fff;
+            --text-color-light: #333;
+            --container-bg-dark: rgba(255, 255, 255, 0.1);
+            --container-bg-light: rgba(0, 0, 0, 0.1);
+            --canvas-bg-dark: rgba(255, 255, 255, 0.95);
+            --canvas-bg-light: rgba(255, 255, 255, 1);
+        }
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background: var(--bg-gradient-dark);
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: var(--text-color-dark);
+            transition: background 0.3s ease, color 0.3s ease;
+            overflow: hidden;
+        }
+        body.light-mode {
+            background: var(--bg-gradient-light);
+            color: var(--text-color-light);
+        }
+        .game-container {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            background: var(--container-bg-dark);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            transition: transform 0.3s ease, background 0.3s ease;
+            animation: float 6s ease-in-out infinite;
+            margin: 0 auto;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px); }
+            50% { transform: translateY(-10px); }
+            100% { transform: translateY(0px); }
+        }
+        .light-mode .game-container {
+            background: var(--container-bg-light);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
+        }
+        canvas {
+            border-radius: 15px;
+            background-color: var(--canvas-bg-dark);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .light-mode canvas {
+            background-color: var(--canvas-bg-light);
+            border: 1px solid rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+        }
+        #score {
+            font-size: 32px;
+            margin-bottom: 25px;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            letter-spacing: 1px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .difficulty-info {
+            margin-top: 20px;
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.8);
+            text-align: center;
+            padding: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            backdrop-filter: blur(4px);
+        }
+        .light-mode .difficulty-info {
+            color: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.05);
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.2);
+            color: inherit;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+            backdrop-filter: blur(4px);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+            transform: translateY(-2px);
+        }
+        .btn:active {
+            transform: translateY(1px);
+        }
+        .light-mode .btn {
+            background: rgba(0, 0, 0, 0.1);
+        }
+        .light-mode .btn:hover {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        .difficulty-info span {
+            margin: 0 10px;
+            padding: 5px 10px;
+            border-radius: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(4px);
+            transition: all 0.3s ease;
+        }
+        .difficulty-info span:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .game-over-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            animation: fadeIn 0.3s ease;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            text-align: center;
+            box-shadow: 0 8px 32px rgba(31, 38, 135, 0.37);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            transform: scale(0.9);
+            animation: scaleIn 0.3s ease forwards;
+        }
+
+        .light-mode .modal-content {
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-content h2 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            color: #e74c3c;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+
+        .modal-content p {
+            font-size: 1.2em;
+            margin: 10px 0;
+            color: var(--text-color);
+        }
+
+        .play-again-btn {
+            margin-top: 20px;
+            font-size: 1.2em;
+            padding: 12px 30px;
+            background: linear-gradient(45deg, #2ecc71, #27ae60);
+            border: none;
+            color: white;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.3);
+        }
+
+        .play-again-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(46, 204, 113, 0.4);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes scaleIn {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <div id="score">Score: 0</div>
+        <canvas id="gameCanvas" width="550" height="550"></canvas>
+        <div class="difficulty-info">
+            <span class="lang-en">Difficulty:</span><span class="lang-ko">난이도:</span> <span>1</span> <span class="lang-en">Easy</span><span class="lang-ko">쉬움</span> <span>2</span> <span class="lang-en">Normal</span><span class="lang-ko">보통</span> <span>3</span> <span class="lang-en">Hard</span><span class="lang-ko">어려움</span>
+        </div>
+        <div class="controls">
+            <button class="btn" id="startButton"><span class="lang-en">Start Game</span><span class="lang-ko">게임 시작</span></button>
+            <button class="btn" id="themeToggle"><span class="lang-en">Toggle Theme</span><span class="lang-ko">테마 전환</span></button>
+            <button class="btn" id="langToggle"><span class="lang-en">Toggle Language</span><span class="lang-ko">언어 전환</span></button>
+        </div>
+    </div>
+    <script src="game.js"></script>
+</body>
+</html>
