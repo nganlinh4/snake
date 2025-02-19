@@ -1,3 +1,8 @@
+// Get canvas context
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+
 // Game constants
 const GRID_SIZE = Math.floor(550/30);
 const GRID_COUNT = 30;
@@ -6,6 +11,8 @@ const WALL_COUNT = Math.floor(GRID_COUNT * GRID_COUNT * 0.05); // 5% of grid wil
 const PARTICLE_COUNT = 15; // Number of particles per food collection
 const STARS_COUNT = 50; // Number of background stars
 const PARALLAX_STRENGTH = 0.3; // How much the background moves
+let starCanvas = document.createElement('canvas');
+let starCtx = starCanvas.getContext('2d');
 
 // Game variables
 let snake = [
@@ -143,6 +150,19 @@ function updateCombo() {
 // Initialize background stars
 function initializeStars() {
     backgroundStars = Array.from({ length: STARS_COUNT }, () => new Star());
+    starCanvas.width = canvas.width;
+    starCanvas.height = canvas.height;
+    backgroundStars.forEach(star => {
+        const gradient = starCtx.createRadialGradient(
+            star.x, star.y, 0,
+            star.x, star.y, star.size * 2
+        );
+        gradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * star.brightness})`);
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        starCtx.fillStyle = gradient;
+        starCtx.fillRect(star.x - star.size, star.y - star.size, star.size * 2, star.size * 2);
+    });
 }
 
 initializeStars();
@@ -155,9 +175,9 @@ const DIFFICULTY_SETTINGS = {
 };
 
 // Get canvas context
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-const scoreElement = document.getElementById('score');
+
+
+
 
 // Initialize game
 function init() {
@@ -545,7 +565,7 @@ function draw() {
             ctx.shadowColor = '#2196F3';
             ctx.shadowBlur = 20;
         } else {
-            ctx.shadowColor = gradient.addColorStop(0);
+            ctx.shadowColor = gradient.addColorStop(0, 'transparent');
         }
         ctx.shadowBlur = 10;
         ctx.shadowOffsetY = 2;
