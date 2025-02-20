@@ -6,11 +6,11 @@ const scoreElement = document.getElementById('score');
 // Game constants
 const GRID_SIZE = Math.floor(550/30);
 const GRID_COUNT = 30;
-const BASE_SPEED = 100;
+const BASE_SPEED = 120; // Slightly slower base speed for better performance
 const WALL_COUNT = Math.floor(GRID_COUNT * GRID_COUNT * 0.05); // 5% of grid will be walls
-const PARTICLE_COUNT = 15; // Number of particles per food collection
+const PARTICLE_COUNT = 8; // Reduced particles for better performance
 const STARS_COUNT = 50; // Number of background stars
-const PARALLAX_STRENGTH = 0.3; // How much the background moves
+const PARALLAX_STRENGTH = 0.2; // Reduced parallax for smoother movement
 let starCanvas = document.createElement('canvas');
 let starCtx = starCanvas.getContext('2d');
 
@@ -49,20 +49,19 @@ class Particle {
         this.x = x;
         this.y = y;
         this.color = color;
-        this.size = Math.random() * 4 + 2;
+        this.size = Math.random() * 3 + 2;
         this.speedX = (Math.random() - 0.5) * 8;
         this.speedY = (Math.random() - 0.5) * 8;
-        this.gravity = 0.2;
         this.life = 1.0;
-        this.decay = Math.random() * 0.02 + 0.02;
+        this.decay = Math.random() * 0.03 + 0.02;
+        this.createdAt = Date.now();
     }
 
     update() {
-        this.x += this.speedX;
-        this.y += this.speedY;
-        this.speedY += this.gravity;
+        this.x += this.speedX * 0.8;
+        this.y += this.speedY * 0.8;
         this.life -= this.decay;
-        this.size *= 0.99;
+        this.size *= 0.98;
         return this.life > 0;
     }
 }
@@ -394,27 +393,11 @@ function draw() {
     const offsetY = (snakeHead.y * GRID_SIZE - centerY) * PARALLAX_STRENGTH;
 
     // Draw background stars with parallax effect
-    backgroundStars.forEach(star => {
-        const parallaxX = offsetX * star.depth;
-        const parallaxY = offsetY * star.depth;
-        
-        // Wrap stars around the canvas
-        let drawX = star.x - parallaxX;
-        let drawY = star.y - parallaxY;
-        
-        drawX = ((drawX % canvas.width) + canvas.width) % canvas.width;
-        drawY = ((drawY % canvas.height) + canvas.height) % canvas.height;
-        
-        const gradient = ctx.createRadialGradient(
-            drawX, drawY, 0,
-            drawX, drawY, star.size * 2
-        );
-        gradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * star.brightness})`);
-        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        
-        ctx.fillStyle = gradient;
-        ctx.fillRect(drawX - star.size, drawY - star.size, star.size * 2, star.size * 2);
-    });
+    // Draw background from pre-rendered canvas
+    ctx.drawImage(starCanvas, -offsetX, -offsetY);
+    // Draw wrapped edges for seamless scrolling
+    ctx.drawImage(starCanvas, -offsetX + canvas.width, -offsetY);
+    ctx.drawImage(starCanvas, -offsetX - canvas.width, -offsetY);
 
     // Add subtle color overlay to create depth
     ctx.fillStyle = `rgba(0, 0, 0, 0.1)`;
@@ -422,22 +405,25 @@ function draw() {
 
     // Draw and update particles
     particles = particles.filter(particle => {
-        ctx.save();
-        ctx.globalAlpha = particle.life;
-        ctx.fillStyle = particle.color;
-        ctx.shadowColor = particle.color;
-        ctx.shadowBlur = 10;
+        // Remove particles far from snake head
+        const dx = particle.x - (snake[0].x * GRID_SIZE);
+        const dy = particle.y - (snake[0].y * GRID_SIZE);
+        const viewDistance = 12 * GRID_SIZE;
         
+        if ((dx * dx + dy * dy) > viewDistance * viewDistance) {
+            return false;
+        }
+
+        ctx.save();
+        ctx.globalAlpha = Math.min(particle.life, 0.8);
+        ctx.fillStyle = particle.color;
         ctx.beginPath();
         ctx.arc(particle.x, particle.y, particle.size, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.restore();
         
-        return particle.update();
+        return particle.life > 0 && particle.update();
     });
-
-    ctx.globalAlpha = 1;
 
     // Draw and update floating texts
     floatingTexts = floatingTexts.filter(text => {
@@ -448,8 +434,6 @@ function draw() {
             ctx.save();
             ctx.globalAlpha = text.life;
             ctx.fillStyle = text.color;
-            ctx.shadowColor = text.color;
-            ctx.shadowBlur = 5;
             ctx.font = 'bold 20px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(text.text, text.x, text.y);
@@ -457,7 +441,10 @@ function draw() {
             return true;
         }
         return false;
+        
     });
+
+    ctx.globalAlpha = 1;
 
     // Draw status effects
     const currentTime = Date.now();
@@ -517,21 +504,15 @@ function draw() {
 
     // Draw snake trail effect with improved interpolation
     snake.forEach((segment, index) => {
-        const alpha = 1 - (index / snake.length) * 0.6;
-        const time = Date.now() / 1000;
-        const hue = (200 + Math.sin(time + index * 0.1) * 20) % 360;
-        const gradient = ctx.createLinearGradient(
-            segment.x * GRID_SIZE, segment.y * GRID_SIZE,
-            (segment.x + 1) * GRID_SIZE, (segment.y + 1) * GRID_SIZE);
-        gradient.addColorStop(0, `hsla(${hue}, 70%, 50%, ${alpha})`);
-        gradient.addColorStop(1, `hsla(${hue + 30}, 70%, 40%, ${alpha})`);
-        ctx.fillStyle = gradient;
+        // Simplified gradient calculation
+        const alpha = Math.max(0.4, 1 - (index / snake.length) * 0.6);
+        ctx.fillStyle = `hsla(200, 70%, ${50 - index * 0.5}%, ${alpha})`;
 
         let x = segment.x;
         let y = segment.y;
 
-        // Apply smoother interpolation for the head and body segments
-        if (index === 0 && interpolationProgress < 1) {
+        // Only apply interpolation to the head
+        if (index === 0 && interpolationProgress < 1) { 
             const moveOffset = Math.sin(interpolationProgress * Math.PI / 2);
             switch(direction) {
                 case 'up': y = segment.y + (1 - moveOffset); break;
@@ -539,36 +520,21 @@ function draw() {
                 case 'left': x = segment.x + (1 - moveOffset); break;
                 case 'right': x = segment.x - (1 - moveOffset); break;
             }
-        } else if (index > 0 && interpolationProgress < 1) {
-            const prevSegment = snake[index - 1];
-            const lerpFactor = Math.sin(interpolationProgress * Math.PI / 2);
-            x = x + (prevSegment.x - x) * lerpFactor * 0.5;
-            y = y + (prevSegment.y - y) * lerpFactor * 0.5;
         }
-
         const segmentSize = GRID_SIZE - 1;
         x = x * GRID_SIZE;
         y = y * GRID_SIZE;
 
+        // Only apply shadow to head
+        if (index === 0) {
+            ctx.shadowBlur = 10;
+            ctx.shadowOffsetY = 2;
+        } else {
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetY = 0;
+        }
         ctx.beginPath();
         ctx.roundRect(x, y, segmentSize, segmentSize, 6);
-        
-        // Add speed effect trail when speed powerup is active
-        if (activeEffects.some(effect => effect.type === 'speed')) {
-            const trailGradient = ctx.createLinearGradient(
-                x, y + segmentSize,
-                x, y
-            );
-            trailGradient.addColorStop(0, 'rgba(33, 150, 243, 0)');
-            trailGradient.addColorStop(1, 'rgba(33, 150, 243, 0.3)');
-            
-            ctx.shadowColor = '#2196F3';
-            ctx.shadowBlur = 20;
-        } else {
-            ctx.shadowColor = gradient.addColorStop(0, 'transparent');
-        }
-        ctx.shadowBlur = 10;
-        ctx.shadowOffsetY = 2;
         ctx.fill();
     });
 
@@ -648,15 +614,17 @@ function gameOver() {
     const modal = document.createElement('div');
     modal.className = 'game-over-modal';
     modal.innerHTML = `
-        <div class="modal-content">
-            <h2><span class="lang-en">Game Over!</span><span class="lang-ko">게임 오버!</span></h2>
-            <p><span class="lang-en">Score:</span><span class="lang-ko">점수:</span> ${score}</p>
-            <p><span class="lang-en">High Score:</span><span class="lang-ko">최고점수:</span> ${highScore}</p>
-            <button class="btn play-again-btn">
-                <span class="lang-en">Play Again</span>
-                <span class="lang-ko">다시 하기</span>
-            </button>
-        </div>
+        
+            
+                Game Over!게임 오버!
+                Score:점수: ${score}
+                High Score:최고점수: ${highScore}
+                
+                    Play Again
+                    다시 하기
+                
+            
+        
     `;
     document.body.appendChild(modal);
     updateLanguage();
